@@ -15,9 +15,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
 <style>
 :root{
-  --page:#5A2D55; --page-dark:#43203F;
+  --page:#1F4E79; --page-dark:#163A5C;
   --bg:#FFF0DF; --card:#FFF9F1; --ink:#2C2119; --muted:#765947; --line:#E5CDB9;
-  --accent:#5A2D55; --accent-ink:#FFF9F1; --soft:#FFF0DF; --soft-ink:#2C2119;
+  --accent:#1F4E79; --accent-ink:#FFF9F1; --soft:#FFF0DF; --soft-ink:#2C2119;
   --cta:#FFC542; --cta-hover:#F5B52A; --cta-ink:#2C2119;
   --ok:#E8F6F1; --ok-ink:#17664F; --miss:#FFE8E1; --miss-ink:#9A3C2C; --extra:#FFF3C4; --extra-ink:#7A5A00;
   --hl:#FFE08A;
@@ -30,7 +30,7 @@ header{display:flex;align-items:center;gap:12px;margin:2px 0 18px}
 header .brand-logo{width:64px;height:80px;object-fit:contain;flex:none}
 h1{font-weight:900;font-size:2.4rem;margin:0;letter-spacing:-.05em;line-height:.95;color:#FFF9F1}
 .sub{color:#FFF3C4;margin:6px 0 0;font-size:.95rem;font-weight:750}
-.card{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:20px;margin-bottom:14px;box-shadow:0 18px 48px rgba(40,10,35,.28)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:20px;margin-bottom:14px;box-shadow:0 18px 48px rgba(10,30,50,.22)}
 h2{font-weight:900;font-size:1.35rem;letter-spacing:-.03em;margin:0 0 12px}
 .lbl{display:block;font-size:.74rem;font-weight:900;color:#cd754f;text-transform:uppercase;letter-spacing:.05em;margin:16px 0 6px}
 .lbl.first{margin-top:0}
@@ -343,7 +343,11 @@ async function piperLib(){ // nur zum Prüfen des Speicherstands
 }
 // Probiert die Quellen nacheinander, bis eine wirklich Audio erzeugt
 async function workingPiper(id, text, prog){
-  if(piperMod) return {m:piperMod, first: await predictSafe(piperMod, text, id, prog)};
+  if(piperMod){
+    const st=await piperStored(piperMod);
+    if(!st.includes(id) && typeof piperMod.download==="function") await piperMod.download(id, prog);
+    return {m:piperMod, first: await predictSafe(piperMod, text, id, prog)};
+  }
   const errs=[];
   for(const u of PIPER_URLS){
     try{
@@ -507,7 +511,7 @@ async function speakPiper(sents, my, cb){
   if(my!==playToken) return;
   const cache=new Map();
   if(first) cache.set(0, Promise.resolve(URL.createObjectURL(first)));
-  const get=c=>{ if(c>=chunks.length) return null; if(!cache.has(c)) cache.set(c, predictQueued(m, chunks[c].text, id, null, 60000).then(b=>URL.createObjectURL(b)).catch(e=>{console.warn("Abschnitt",c,e);return null;})); return cache.get(c); };
+  const get=c=>{ if(c>=chunks.length) return null; if(!cache.has(c)) cache.set(c, predictQueued(m, chunks[c].text, id, prog, 90000).catch(e=>{console.warn("Abschnitt",c,"2. Versuch",e);return predictQueued(m, cleanHard(chunks[c].text), id, prog, 90000);}).then(b=>URL.createObjectURL(b)).catch(e=>{console.warn("Abschnitt",c,e);return null;})); return cache.get(c); };
   for(let c=0;c<chunks.length;c++){
     if(my!==playToken) return;
     if(c>0 && cache.has(c)===false) cb.onStatus&&cb.onStatus("Nächster Abschnitt wird berechnet …");
