@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dikto – Hören, behalten, wiedergeben</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='6' y='6' width='88' height='88' rx='24' fill='%23EEEDFE'/%3E%3Cg fill='%23534AB7'%3E%3Crect x='16' y='43' width='6' height='14' rx='3'/%3E%3Crect x='25' y='32' width='6' height='36' rx='3'/%3E%3Crect x='34' y='38' width='6' height='24' rx='3'/%3E%3Crect x='43' y='28' width='6' height='44' rx='3'/%3E%3C/g%3E%3Cg fill='none' stroke='%237F77DD' stroke-width='2.5'%3E%3Crect x='53.25' y='29.25' width='5.5' height='41.5' rx='2.75'/%3E%3Crect x='62.25' y='39.25' width='5.5' height='21.5' rx='2.75'/%3E%3Crect x='71.25' y='33.25' width='5.5' height='33.5' rx='2.75'/%3E%3Crect x='80.25' y='44.25' width='5.5' height='11.5' rx='2.75'/%3E%3C/g%3E%3C/svg%3E">
+<script type="importmap">{"imports":{
+  "https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.18.0/": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/",
+  "https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.17.1/": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/"
+}}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -220,10 +224,10 @@ const TOPICS = [["zufall","Zufall"],["nachricht","Nachrichten"],["rede","Rede"],
 const DENS = [["keine","keine"],["wenig","wenig"],["mittel","mittel"],["viel","viel"]];
 const PIPER_VOICES = [["piper:de_DE-thorsten-medium","Natürlich: Thorsten (männlich)"],["piper:de_DE-kerstin-low","Natürlich: Kerstin (weiblich)"]];
 const PIPER_URLS = [
+  "https://esm.sh/@mintplex-labs/piper-tts-web@1.0.4?deps=onnxruntime-web@1.18.0",
   "https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1/+esm",
-  "https://esm.sh/@mintplex-labs/piper-tts-web@1",
-  "https://cdn.jsdelivr.net/npm/@diffusionstudio/vits-web@1/+esm",
-  "https://esm.sh/@diffusionstudio/vits-web@1"
+  "https://esm.sh/@diffusionstudio/vits-web@1.0.3?deps=onnxruntime-web@1.17.1",
+  "https://cdn.jsdelivr.net/npm/@diffusionstudio/vits-web@1/+esm"
 ];
 
 const store = {
@@ -317,21 +321,35 @@ let piperMod=null;
 function escH(x){return String(x).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 if(synth){ synth.onvoiceschanged=loadVoices; setTimeout(loadVoices,700); }
 loadVoices();
-async function piperLib(){
+async function loadPiperModule(u){
+  const raw=await import(u);
+  const m=(raw && typeof raw.predict==="function") ? raw : (raw && raw.default && typeof raw.default.predict==="function" ? raw.default : null);
+  if(!m) throw new Error("keine predict-Funktion");
+  return m;
+}
+async function piperLib(){ // nur zum Prüfen des Speicherstands
   if(piperMod) return piperMod;
+  const errs=[];
+  for(const u of PIPER_URLS){ try{ return await loadPiperModule(u); }catch(e){ errs.push(new URL(u).host+": "+(e&&e.message||e)); } }
+  throw new Error("Bibliothek nicht ladbar – "+errs.join(" | "));
+}
+// Probiert die Quellen nacheinander, bis eine wirklich Audio erzeugt
+async function workingPiper(id, text, prog){
+  if(piperMod) return {m:piperMod, first: await piperMod.predict({text, voiceId:id}, prog)};
   const errs=[];
   for(const u of PIPER_URLS){
     try{
-      const raw=await import(u);
-      const m=(raw && typeof raw.predict==="function") ? raw : (raw && raw.default && typeof raw.default.predict==="function" ? raw.default : null);
-      if(m){ piperMod=m; return m; }
-      errs.push(new URL(u).host+": keine predict-Funktion");
-    }catch(e){ errs.push(new URL(u).host+": "+(e&&e.message||e)); }
+      const m=await loadPiperModule(u);
+      const st=await piperStored(m);
+      if(!st.includes(id) && typeof m.download==="function") await m.download(id, prog);
+      const first=await m.predict({text, voiceId:id}, prog);
+      piperMod=m; return {m, first};
+    }catch(e){ errs.push(new URL(u).host+(u.includes("vits")?" (vits)":"")+": "+(e&&e.message||e)); console.warn(u,e); }
   }
-  throw new Error("Bibliothek nicht ladbar – "+errs.join(" | "));
+  throw new Error(errs.join(" || "));
 }
 async function piperStored(m){ try{ return typeof m.stored==="function" ? await m.stored() : []; }catch(e){ return []; } }
-function piperFail(e){ piperLastError=String(e&&e.message||e).slice(0,400); store.set("dk_piper_err",piperLastError); }
+function piperFail(e){ piperLastError=String(e&&e.message||e).slice(0,1200); store.set("dk_piper_err",piperLastError); }
 async function voiceStatus(){
   const el=$("voiceStatus");
   if(!usingPiper()){
@@ -449,15 +467,12 @@ function speakDevice(sents, my, cb){
 
 async function speakPiper(sents, my, cb){
   const id=$("voice").value.slice(6);
-  const m=await piperLib();
-  const st=await piperStored(m);
   const prog=p=>{ if(p&&p.total) cb.onStatus&&cb.onStatus("Stimme wird geladen … "+Math.round(p.loaded*100/p.total)+" %"); };
-  if(!st.includes(id) && typeof m.download==="function"){
-    cb.onStatus&&cb.onStatus("Stimme wird geladen … 0 %");
-    await m.download(id, prog);
-  }
+  cb.onStatus&&cb.onStatus("Stimme wird vorbereitet … (beim ersten Mal ca. 60 MB)");
+  const {m, first}=await workingPiper(id, sents[0], prog);
   cb.onStatus&&cb.onStatus("Bereite Audio vor …");
   const cache=new Map();
+  cache.set(0, Promise.resolve(URL.createObjectURL(first)));
   const get=i=>{ if(i>=sents.length) return null; if(!cache.has(i)) cache.set(i, m.predict({text:sents[i], voiceId:id}, prog).then(b=>URL.createObjectURL(b))); return cache.get(i); };
   for(let i=0;i<sents.length;i++){
     if(my!==playToken) return;
