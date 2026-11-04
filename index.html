@@ -15,9 +15,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
 <style>
 :root{
-  --page:#1F4E79; --page-dark:#163A5C;
+  --page:#5A2D55; --page-dark:#43203F;
   --bg:#FFF0DF; --card:#FFF9F1; --ink:#2C2119; --muted:#765947; --line:#E5CDB9;
-  --accent:#1F4E79; --accent-ink:#FFF9F1; --soft:#FFF0DF; --soft-ink:#2C2119;
+  --accent:#5A2D55; --accent-ink:#FFF9F1; --soft:#FFF0DF; --soft-ink:#2C2119;
   --cta:#FFC542; --cta-hover:#F5B52A; --cta-ink:#2C2119;
   --ok:#E8F6F1; --ok-ink:#17664F; --miss:#FFE8E1; --miss-ink:#9A3C2C; --extra:#FFF3C4; --extra-ink:#7A5A00;
   --hl:#FFE08A;
@@ -30,7 +30,7 @@ header{display:flex;align-items:center;gap:12px;margin:2px 0 18px}
 header .brand-logo{width:64px;height:80px;object-fit:contain;flex:none}
 h1{font-weight:900;font-size:2.4rem;margin:0;letter-spacing:-.05em;line-height:.95;color:#FFF9F1}
 .sub{color:#FFF3C4;margin:6px 0 0;font-size:.95rem;font-weight:750}
-.card{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:20px;margin-bottom:14px;box-shadow:0 18px 48px rgba(10,30,50,.22)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:20px;margin-bottom:14px;box-shadow:0 18px 48px rgba(40,10,35,.28)}
 h2{font-weight:900;font-size:1.35rem;letter-spacing:-.03em;margin:0 0 12px}
 .lbl{display:block;font-size:.74rem;font-weight:900;color:#cd754f;text-transform:uppercase;letter-spacing:.05em;margin:16px 0 6px}
 .lbl.first{margin-top:0}
@@ -225,7 +225,7 @@ const TOPICS = [["zufall","Zufall"],["nachricht","Nachrichten"],["rede","Rede"],
 const DENS = [["keine","keine"],["wenig","wenig"],["mittel","mittel"],["viel","viel"]];
 const PIPER_VOICES = [
   ["piper:de_DE-thorsten-medium","Natürlich: Thorsten (männlich)"],
-  ["piper:de_DE-thorsten-high","Natürlich: Thorsten HD (männlich)"],
+  ["piper:de_DE-thorsten-high","Natürlich: Thorsten HD (groß, eher für Laptop)"],
   ["piper:de_DE-kerstin-low","Natürlich: Kerstin (weiblich)"],
   ["piper:de_DE-ramona-low","Natürlich: Ramona (weiblich)"],
   ["piper:de_DE-eva_k-x_low","Natürlich: Eva (weiblich)"],
@@ -360,6 +360,11 @@ async function workingPiper(id, text, prog){
 }
 function cleanSoft(t){ return t.replace(/[„“”"«»‚‘’']/g,"").replace(/\s*[–—]\s*/g,", ").replace(/\//g," ").replace(/…/g,".").replace(/\s+/g," ").trim(); }
 function cleanHard(t){ return cleanSoft(t).replace(/%/g," Prozent").replace(/[^A-Za-zÄÖÜäöüß0-9 .,:!?-]/g," ").replace(/\s+/g," ").trim(); }
+let predQueue=Promise.resolve();
+function predictQueued(m, text, id, prog, ms){
+  const run=()=>Promise.race([ predictSafe(m,text,id,prog), new Promise((_,rej)=>setTimeout(()=>rej(new Error("Zeitüberschreitung")), ms||60000)) ]);
+  const p=predQueue.then(run,run); predQueue=p.catch(()=>{}); return p;
+}
 async function predictSafe(m, text, id, prog){
   try{ return await m.predict({text:cleanSoft(text), voiceId:id}, prog); }
   catch(e){ if(/OrtRun|Gather|out of data bounds/i.test(String(e&&e.message))) return await m.predict({text:cleanHard(text), voiceId:id}, prog); throw e; }
@@ -494,27 +499,39 @@ function speakDevice(sents, my, cb, anyVoice){
 
 async function speakPiper(sents, my, cb){
   const id=$("voice").value.slice(6);
-  const prog=p=>{ if(p&&p.total) cb.onStatus&&cb.onStatus("Stimme wird geladen … "+Math.round(p.loaded*100/p.total)+" %"); };
-  cb.onStatus&&cb.onStatus("Stimme wird vorbereitet … (beim ersten Mal ca. 60 MB)");
-  const {m, first}=await workingPiper(id, sents[0], prog);
-  cb.onStatus&&cb.onStatus("Bereite Audio vor …");
+  const prog=p=>{ if(p&&p.total&&p.loaded<p.total) cb.onStatus&&cb.onStatus("Stimme wird geladen … "+Math.round(p.loaded*100/p.total)+" %"); };
+  // kurze Sätze bündeln: weniger Rechenaufrufe
+  const chunks=chunkSentences(sents).map(idx=>({idx, text:idx.map(i=>sents[i]).join(" ")}));
+  cb.onStatus&&cb.onStatus("Stimme wird vorbereitet … (beim ersten Mal einmalig laden)");
+  const {m, first}=await workingPiper(id, chunks[0].text, prog);
+  if(my!==playToken) return;
   const cache=new Map();
   if(first) cache.set(0, Promise.resolve(URL.createObjectURL(first)));
-  const get=i=>{ if(i>=sents.length) return null; if(!cache.has(i)) cache.set(i, predictSafe(m, sents[i], id, prog).then(b=>URL.createObjectURL(b)).catch(e=>{console.warn('Satz',i,e);return null;})); return cache.get(i); };
-  for(let i=0;i<sents.length;i++){
+  const get=c=>{ if(c>=chunks.length) return null; if(!cache.has(c)) cache.set(c, predictQueued(m, chunks[c].text, id, null, 60000).then(b=>URL.createObjectURL(b)).catch(e=>{console.warn("Abschnitt",c,e);return null;})); return cache.get(c); };
+  for(let c=0;c<chunks.length;c++){
     if(my!==playToken) return;
-    const url=await get(i); get(i+1); get(i+2);
+    if(c>0 && cache.has(c)===false) cb.onStatus&&cb.onStatus("Nächster Abschnitt wird berechnet …");
+    const url=await get(c);
+    get(c+1); // nur EINEN Abschnitt vorausrechnen, nacheinander
     if(my!==playToken) return;
-    if(i===0){ cb.onStatus&&cb.onStatus(null); if(piperLastError){piperLastError="";store.set("dk_piper_err","");} }
-    cb.onSentence&&cb.onSentence(i);
-    if(!url){ await deviceSayOnce(sents[i]); cb.onProgress&&cb.onProgress((i+1)/sents.length); continue; }
-    await new Promise(res=>{
-      audioEl.onended=res; audioEl.onerror=res;
-      audioEl.src=url; audioEl.playbackRate=state.rate; audioEl.preservesPitch=true;
-      const p=audioEl.play(); p&&p.catch(res);
-    });
-    URL.revokeObjectURL(url);
-    cb.onProgress&&cb.onProgress((i+1)/sents.length);
+    cb.onStatus&&cb.onStatus(null);
+    if(c===0 && piperLastError){piperLastError="";store.set("dk_piper_err","");}
+    const {idx,text}=chunks[c];
+    cb.onSentence&&cb.onSentence(idx[0]);
+    if(!url){ await deviceSayOnce(text); }
+    else{
+      // Satzmarkierung grob nach Zeitanteil
+      const lens=idx.map(i=>sents[i].length), tot=lens.reduce((x,y)=>x+y,0);
+      await new Promise(res=>{
+        audioEl.onended=res; audioEl.onerror=res;
+        audioEl.ontimeupdate=()=>{ if(!audioEl.duration||idx.length<2) return; const f=audioEl.currentTime/audioEl.duration*tot; let acc=0,k=0; while(k<idx.length-1&&acc+lens[k]<f){acc+=lens[k];k++;} cb.onSentence&&cb.onSentence(idx[k]); };
+        audioEl.src=url; audioEl.playbackRate=state.rate; audioEl.preservesPitch=true;
+        const pl=audioEl.play(); pl&&pl.catch(res);
+      });
+      audioEl.ontimeupdate=null;
+      URL.revokeObjectURL(url);
+    }
+    cb.onProgress&&cb.onProgress((c+1)/chunks.length);
   }
   if(my===playToken) cb.onDone&&cb.onDone();
 }
