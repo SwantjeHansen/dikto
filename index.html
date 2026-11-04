@@ -219,12 +219,18 @@ const LENGTHS = [10,20,30,45,60,90,120,180,240,300];
 const TOPICS = [["zufall","Zufall"],["nachricht","Nachrichten"],["rede","Rede"],["vortrag","Fachvortrag"],["erzaehlung","Erzählung"],["alltag","Alltag"],["ansage","Durchsage"],["wirtschaft","Wirtschaft"]];
 const DENS = [["keine","keine"],["wenig","wenig"],["mittel","mittel"],["viel","viel"]];
 const PIPER_VOICES = [["piper:de_DE-thorsten-medium","Natürlich: Thorsten (männlich)"],["piper:de_DE-kerstin-low","Natürlich: Kerstin (weiblich)"]];
-const PIPER_URL = "https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1.0.4/+esm";
+const PIPER_URLS = [
+  "https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1/+esm",
+  "https://esm.sh/@mintplex-labs/piper-tts-web@1",
+  "https://cdn.jsdelivr.net/npm/@diffusionstudio/vits-web@1/+esm",
+  "https://esm.sh/@diffusionstudio/vits-web@1"
+];
 
 const store = {
   get(k,d){try{const v=localStorage.getItem(k);return v===null?d:JSON.parse(v)}catch(e){return d}},
   set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
 };
+let piperLastError = store.get("dk_piper_err", "");
 const state = {
   src: store.get("dk_src","lib"), len: store.get("dk_len",10), topic: store.get("dk_topic","zufall"), dens: store.get("dk_dens","keine"),
   rate: store.get("dk_rate",1), voice: store.get("dk_voice",null),
@@ -308,9 +314,24 @@ const curVoice = () => { const v=$("voice").value||""; return v.startsWith("dev:
 const usingPiper = () => ($("voice").value||"").startsWith("piper:");
 
 let piperMod=null;
+function escH(x){return String(x).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 if(synth){ synth.onvoiceschanged=loadVoices; setTimeout(loadVoices,700); }
 loadVoices();
-async function piperLib(){ if(!piperMod) piperMod = await import(PIPER_URL); return piperMod; }
+async function piperLib(){
+  if(piperMod) return piperMod;
+  const errs=[];
+  for(const u of PIPER_URLS){
+    try{
+      const raw=await import(u);
+      const m=(raw && typeof raw.predict==="function") ? raw : (raw && raw.default && typeof raw.default.predict==="function" ? raw.default : null);
+      if(m){ piperMod=m; return m; }
+      errs.push(new URL(u).host+": keine predict-Funktion");
+    }catch(e){ errs.push(new URL(u).host+": "+(e&&e.message||e)); }
+  }
+  throw new Error("Bibliothek nicht ladbar – "+errs.join(" | "));
+}
+async function piperStored(m){ try{ return typeof m.stored==="function" ? await m.stored() : []; }catch(e){ return []; } }
+function piperFail(e){ piperLastError=String(e&&e.message||e).slice(0,400); store.set("dk_piper_err",piperLastError); }
 async function voiceStatus(){
   const el=$("voiceStatus");
   if(!usingPiper()){
@@ -320,8 +341,8 @@ async function voiceStatus(){
   }
   const id=$("voice").value.slice(6);
   el.textContent="Prüfe, ob die Stimme schon gespeichert ist …";
-  try{ const m=await piperLib(); const st=await m.stored(); el.innerHTML = st.includes(id) ? "<b>Bereit</b> – gespeichert, funktioniert offline." : "Wird beim ersten Abspielen einmalig geladen (ca. 60 MB, am besten im WLAN)."; }
-  catch(e){ el.textContent="Eingebaute Stimme konnte nicht geladen werden – bitte eine Gerätestimme wählen."; console.warn(e); }
+  try{ const m=await piperLib(); const st=await piperStored(m); el.innerHTML = st.includes(id) ? "<b>Bereit</b> – gespeichert, funktioniert offline." : "Wird beim ersten Abspielen einmalig geladen (ca. 60 MB, am besten im WLAN)."; if(piperLastError) el.innerHTML+="<br>Letzter Fehler: "+escH(piperLastError); }
+  catch(e){ piperFail(e); el.textContent="Eingebaute Stimme nicht verfügbar. Fehler: "+piperLastError; console.warn(e); }
 }
 
 /* ---------- Texte auswählen ---------- */
@@ -429,20 +450,20 @@ function speakDevice(sents, my, cb){
 async function speakPiper(sents, my, cb){
   const id=$("voice").value.slice(6);
   const m=await piperLib();
-  const st=await m.stored();
-  if(!st.includes(id)){
+  const st=await piperStored(m);
+  const prog=p=>{ if(p&&p.total) cb.onStatus&&cb.onStatus("Stimme wird geladen … "+Math.round(p.loaded*100/p.total)+" %"); };
+  if(!st.includes(id) && typeof m.download==="function"){
     cb.onStatus&&cb.onStatus("Stimme wird geladen … 0 %");
-    await m.download(id, p=>{ if(p&&p.total) cb.onStatus&&cb.onStatus("Stimme wird geladen … "+Math.round(p.loaded*100/p.total)+" %"); });
-    voiceStatus();
+    await m.download(id, prog);
   }
   cb.onStatus&&cb.onStatus("Bereite Audio vor …");
   const cache=new Map();
-  const get=i=>{ if(i>=sents.length) return null; if(!cache.has(i)) cache.set(i, m.predict({text:sents[i], voiceId:id}).then(b=>URL.createObjectURL(b))); return cache.get(i); };
+  const get=i=>{ if(i>=sents.length) return null; if(!cache.has(i)) cache.set(i, m.predict({text:sents[i], voiceId:id}, prog).then(b=>URL.createObjectURL(b))); return cache.get(i); };
   for(let i=0;i<sents.length;i++){
     if(my!==playToken) return;
     const url=await get(i); get(i+1); get(i+2);
     if(my!==playToken) return;
-    if(i===0) cb.onStatus&&cb.onStatus(null);
+    if(i===0){ cb.onStatus&&cb.onStatus(null); if(piperLastError){piperLastError="";store.set("dk_piper_err","");} }
     cb.onSentence&&cb.onSentence(i);
     await new Promise(res=>{
       audioEl.onended=res; audioEl.onerror=res;
@@ -461,9 +482,9 @@ function speak(text, cb){
   const sents=splitSentences(text.replace(/\n+/g," "));
   if(usingPiper()){
     speakPiper(sents,my,cb).catch(e=>{
-      console.warn("Piper:",e);
+      console.warn("Piper:",e); piperFail(e);
       if(my!==playToken) return;
-      if(synth){ cb.onStatus&&cb.onStatus("Eingebaute Stimme nicht verfügbar – nutze Gerätestimme."); const dv=[...$("voice").options].find(o=>o.value.startsWith("dev:")); if(dv) $("voice").value=dv.value; speakDevice(sents,my,cb); }
+      if(synth){ cb.onStatus&&cb.onStatus("Eingebaute Stimme nicht verfügbar – nutze Gerätestimme. Fehler: "+piperLastError); const dv=[...$("voice").options].find(o=>o.value.startsWith("dev:")); if(dv) $("voice").value=dv.value; speakDevice(sents,my,cb); }
       else cb.onError&&cb.onError("Die eingebaute Stimme konnte nicht geladen werden.");
     });
   } else if(synth){ speakDevice(sents,my,cb); }
