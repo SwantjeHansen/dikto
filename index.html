@@ -216,6 +216,13 @@ th{color:var(--muted);font-weight:600;font-size:.74rem;text-transform:uppercase;
 
 <script src="texts.js"></script>
 <script>
+// Piper liefert manchmal Laut-Nummern, die ältere Stimmmodelle nicht kennen.
+// Wir filtern sie heraus, bevor das Modell rechnet.
+(function(){ const _p=JSON.parse; window.__phLimit=null;
+  JSON.parse=function(t,r){ const v=_p.call(this,t,r); try{ if(window.__phLimit && v && Array.isArray(v.phoneme_ids)) v.phoneme_ids=v.phoneme_ids.filter(x=>x<window.__phLimit); }catch(e){} return v; };
+})();
+</script>
+<script>
 (() => {
 const $ = id => document.getElementById(id);
 const IS_CLAUDE = !!(window.claude && window.claude.use);
@@ -242,6 +249,7 @@ const store = {
   get(k,d){try{const v=localStorage.getItem(k);return v===null?d:JSON.parse(v)}catch(e){return d}},
   set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
 };
+if(!store.get("dk_mig_v10",false)){ store.set("dk_bad_voices",[]); store.set("dk_piper_err",""); store.set("dk_mig_v10",true); }
 let piperLastError = store.get("dk_piper_err", "");
 const state = {
   src: store.get("dk_src","lib"), len: store.get("dk_len",10), topic: store.get("dk_topic","zufall"), dens: store.get("dk_dens","keine"),
@@ -372,8 +380,19 @@ function predictQueued(m, text, id, prog, ms){
   const p=predQueue.then(run,run); predQueue=p.catch(()=>{}); return p;
 }
 async function predictSafe(m, text, id, prog){
-  try{ return await m.predict({text:cleanSoft(text), voiceId:id}, prog); }
-  catch(e){ if(/OrtRun|Gather|out of data bounds/i.test(String(e&&e.message))) return await m.predict({text:cleanHard(text), voiceId:id}, prog); throw e; }
+  const limits=store.get("dk_ph_limits",{});
+  const run=async t=>{ window.__phLimit=limits[id]||null; return await m.predict({text:t, voiceId:id}, prog); };
+  try{ return await run(cleanSoft(text)); }
+  catch(e){
+    const msg=String(e&&e.message||e);
+    const r=msg.match(/range \[-?(\d+),\s*(\d+)\]/);
+    if(/Gather|out of data bounds/i.test(msg) && r){
+      limits[id]=parseInt(r[2],10)+1; store.set("dk_ph_limits",limits);
+      return await run(cleanSoft(text));
+    }
+    if(/OrtRun|Gather|out of data bounds/i.test(msg)) return await run(cleanHard(text));
+    throw e;
+  }
 }
 function deviceSayOnce(text){ return new Promise(res=>{ if(!synth) return res(); const u=new SpeechSynthesisUtterance(text); const v=curVoiceAny(); if(v){u.voice=v;u.lang=v.lang}else u.lang="de-DE"; u.rate=state.rate; u.onend=res; u.onerror=res; synth.speak(u); }); }
 const curVoiceAny=()=>devVoices.find(v=>/^de/i.test(v.lang))||devVoices[0]||null;
