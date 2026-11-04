@@ -127,6 +127,7 @@ th{color:var(--muted);font-weight:600;font-size:.74rem;text-transform:uppercase;
     <span class="lbl">Stimme</span>
     <select id="voice"></select>
     <div class="status" id="voiceStatus"></div>
+    <button class="btn ghost hidden" id="testVoiceBtn" type="button" style="margin-top:8px;padding:9px 14px">▶ Stimme testen</button>
 
     <span class="lbl">Sprechtempo: <span id="rateVal">1.00</span>×</span>
     <input type="range" id="rate" min="0.7" max="1.4" step="0.05" value="1">
@@ -222,7 +223,14 @@ const TEXTS = window.DIKTO_TEXTS || [];
 const LENGTHS = [10,20,30,45,60,90,120,180,240,300];
 const TOPICS = [["zufall","Zufall"],["nachricht","Nachrichten"],["rede","Rede"],["vortrag","Fachvortrag"],["erzaehlung","Erzählung"],["alltag","Alltag"],["ansage","Durchsage"],["wirtschaft","Wirtschaft"]];
 const DENS = [["keine","keine"],["wenig","wenig"],["mittel","mittel"],["viel","viel"]];
-const PIPER_VOICES = [["piper:de_DE-thorsten-medium","Natürlich: Thorsten (männlich)"],["piper:de_DE-kerstin-low","Natürlich: Kerstin (weiblich)"]];
+const PIPER_VOICES = [
+  ["piper:de_DE-thorsten-medium","Natürlich: Thorsten (männlich)"],
+  ["piper:de_DE-thorsten-high","Natürlich: Thorsten HD (männlich)"],
+  ["piper:de_DE-kerstin-low","Natürlich: Kerstin (weiblich)"],
+  ["piper:de_DE-ramona-low","Natürlich: Ramona (weiblich)"],
+  ["piper:de_DE-eva_k-x_low","Natürlich: Eva (weiblich)"],
+  ["piper:de_DE-karlsson-low","Natürlich: Karlsson (männlich)"]
+];
 const PIPER_URLS = [
   "https://esm.sh/@mintplex-labs/piper-tts-web@1.0.4?deps=onnxruntime-web@1.18.0",
   "https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1/+esm",
@@ -335,23 +343,34 @@ async function piperLib(){ // nur zum Prüfen des Speicherstands
 }
 // Probiert die Quellen nacheinander, bis eine wirklich Audio erzeugt
 async function workingPiper(id, text, prog){
-  if(piperMod) return {m:piperMod, first: await piperMod.predict({text, voiceId:id}, prog)};
+  if(piperMod) return {m:piperMod, first: await predictSafe(piperMod, text, id, prog)};
   const errs=[];
   for(const u of PIPER_URLS){
     try{
       const m=await loadPiperModule(u);
       const st=await piperStored(m);
       if(!st.includes(id) && typeof m.download==="function") await m.download(id, prog);
-      const first=await m.predict({text, voiceId:id}, prog);
+      let first;
+      try{ first=await predictSafe(m, text, id, prog); }
+      catch(e){ if(/OrtRun|Gather|out of data bounds/i.test(String(e&&e.message))){ piperMod=m; return {m, first:null}; } throw e; }
       piperMod=m; return {m, first};
     }catch(e){ errs.push(new URL(u).host+(u.includes("vits")?" (vits)":"")+": "+(e&&e.message||e)); console.warn(u,e); }
   }
   throw new Error(errs.join(" || "));
 }
+function cleanSoft(t){ return t.replace(/[„“”"«»‚‘’']/g,"").replace(/\s*[–—]\s*/g,", ").replace(/\//g," ").replace(/…/g,".").replace(/\s+/g," ").trim(); }
+function cleanHard(t){ return cleanSoft(t).replace(/%/g," Prozent").replace(/[^A-Za-zÄÖÜäöüß0-9 .,:!?-]/g," ").replace(/\s+/g," ").trim(); }
+async function predictSafe(m, text, id, prog){
+  try{ return await m.predict({text:cleanSoft(text), voiceId:id}, prog); }
+  catch(e){ if(/OrtRun|Gather|out of data bounds/i.test(String(e&&e.message))) return await m.predict({text:cleanHard(text), voiceId:id}, prog); throw e; }
+}
+function deviceSayOnce(text){ return new Promise(res=>{ if(!synth) return res(); const u=new SpeechSynthesisUtterance(text); const v=curVoiceAny(); if(v){u.voice=v;u.lang=v.lang}else u.lang="de-DE"; u.rate=state.rate; u.onend=res; u.onerror=res; synth.speak(u); }); }
+const curVoiceAny=()=>devVoices.find(v=>/^de/i.test(v.lang))||devVoices[0]||null;
 async function piperStored(m){ try{ return typeof m.stored==="function" ? await m.stored() : []; }catch(e){ return []; } }
 function piperFail(e){ piperLastError=String(e&&e.message||e).slice(0,1200); store.set("dk_piper_err",piperLastError); }
 async function voiceStatus(){
   const el=$("voiceStatus");
+  $("testVoiceBtn").classList.toggle("hidden",!usingPiper());
   if(!usingPiper()){
     el.textContent = IS_CLAUDE ? "Natürliche eingebaute Stimmen gibt es, sobald Dikto außerhalb von Claude läuft (z. B. auf GitHub Pages)." : "";
     if(!synth && !IS_CLAUDE) el.textContent="Dieses Gerät hat keine Sprachausgabe – wähle eine eingebaute Stimme.";
@@ -363,6 +382,14 @@ async function voiceStatus(){
   catch(e){ piperFail(e); el.textContent="Eingebaute Stimme nicht verfügbar. Fehler: "+piperLastError; console.warn(e); }
 }
 
+$("testVoiceBtn").onclick=()=>{
+  unlockAudio(); const b=$("testVoiceBtn"), el=$("voiceStatus"); b.disabled=true;
+  speak("Hallo! So klinge ich. Am 14. März 2025 um 9:30 Uhr fuhren 3 Züge nach München.",{
+    onStatus:t=>{ if(t) el.textContent=t; },
+    onDone:()=>{ b.disabled=false; voiceStatus(); },
+    onError:m=>{ b.disabled=false; el.textContent=m; }
+  });
+};
 /* ---------- Texte auswählen ---------- */
 const MONTHS="Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember";
 const UNITS="Prozent|Euro|Dollar|Cent|Millionen Euro|Milliarden Euro|Millionen|Milliarden|Kilometer|Kilometern|Meter|Metern|Millimetern|Millimeter|Milliliter|Grad|Jahre|Jahren|Monate|Monaten|Wochen|Tage|Tagen|Stunden|Minuten|Kilogramm|Tonnen|Megawatt|Kilowattstunden|Menschen|Personen|Mitarbeitende|Beschäftigte|Familien|Kinder|Gäste|Fahrgäste|Tage";
@@ -445,9 +472,9 @@ function unlockAudio(){
 }
 function chunkSentences(sents){ const out=[]; let cur=[],len=0; sents.forEach((s,i)=>{ if(cur.length&&len+s.length>220){out.push(cur);cur=[];len=0;} cur.push(i); len+=s.length+1; }); if(cur.length) out.push(cur); return out; }
 
-function speakDevice(sents, my, cb){
+function speakDevice(sents, my, cb, anyVoice){
   const chunks=chunkSentences(sents), total=sents.join(" ").length; let done=0;
-  const v=curVoice();
+  const v=anyVoice?curVoiceAny():curVoice();
   const play=c=>{
     if(my!==playToken) return;
     if(c>=chunks.length){ cb.onDone&&cb.onDone(); return; }
@@ -472,14 +499,15 @@ async function speakPiper(sents, my, cb){
   const {m, first}=await workingPiper(id, sents[0], prog);
   cb.onStatus&&cb.onStatus("Bereite Audio vor …");
   const cache=new Map();
-  cache.set(0, Promise.resolve(URL.createObjectURL(first)));
-  const get=i=>{ if(i>=sents.length) return null; if(!cache.has(i)) cache.set(i, m.predict({text:sents[i], voiceId:id}, prog).then(b=>URL.createObjectURL(b))); return cache.get(i); };
+  if(first) cache.set(0, Promise.resolve(URL.createObjectURL(first)));
+  const get=i=>{ if(i>=sents.length) return null; if(!cache.has(i)) cache.set(i, predictSafe(m, sents[i], id, prog).then(b=>URL.createObjectURL(b)).catch(e=>{console.warn('Satz',i,e);return null;})); return cache.get(i); };
   for(let i=0;i<sents.length;i++){
     if(my!==playToken) return;
     const url=await get(i); get(i+1); get(i+2);
     if(my!==playToken) return;
     if(i===0){ cb.onStatus&&cb.onStatus(null); if(piperLastError){piperLastError="";store.set("dk_piper_err","");} }
     cb.onSentence&&cb.onSentence(i);
+    if(!url){ await deviceSayOnce(sents[i]); cb.onProgress&&cb.onProgress((i+1)/sents.length); continue; }
     await new Promise(res=>{
       audioEl.onended=res; audioEl.onerror=res;
       audioEl.src=url; audioEl.playbackRate=state.rate; audioEl.preservesPitch=true;
@@ -499,7 +527,7 @@ function speak(text, cb){
     speakPiper(sents,my,cb).catch(e=>{
       console.warn("Piper:",e); piperFail(e);
       if(my!==playToken) return;
-      if(synth){ cb.onStatus&&cb.onStatus("Eingebaute Stimme nicht verfügbar – nutze Gerätestimme. Fehler: "+piperLastError); const dv=[...$("voice").options].find(o=>o.value.startsWith("dev:")); if(dv) $("voice").value=dv.value; speakDevice(sents,my,cb); }
+      if(synth){ cb.onStatus&&cb.onStatus("Eingebaute Stimme nicht verfügbar – nutze Gerätestimme. Fehler: "+piperLastError); speakDevice(sents,my,cb,true); }
       else cb.onError&&cb.onError("Die eingebaute Stimme konnte nicht geladen werden.");
     });
   } else if(synth){ speakDevice(sents,my,cb); }
