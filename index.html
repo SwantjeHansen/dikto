@@ -231,12 +231,12 @@ const LENGTHS = [10,20,30,45,60,90,120,180,240,300];
 const TOPICS = [["zufall","Zufall"],["nachricht","Nachrichten"],["rede","Rede"],["vortrag","Fachvortrag"],["erzaehlung","Erzählung"],["alltag","Alltag"],["ansage","Durchsage"],["wirtschaft","Wirtschaft"]];
 const DENS = [["keine","keine"],["wenig","wenig"],["mittel","mittel"],["viel","viel"]];
 const PIPER_VOICES = [
-  ["piper:de_DE-thorsten-medium","Natürlich: Thorsten (männlich)"],
-  ["piper:de_DE-thorsten-high","Natürlich: Thorsten HD (groß, eher für Laptop)"],
-  ["piper:de_DE-kerstin-low","Natürlich: Kerstin (weiblich)"],
-  ["piper:de_DE-ramona-low","Natürlich: Ramona (weiblich)"],
-  ["piper:de_DE-eva_k-x_low","Natürlich: Eva (weiblich)"],
-  ["piper:de_DE-karlsson-low","Natürlich: Karlsson (männlich)"]
+  ["piper:de_DE-thorsten-medium","Thorsten"],
+  ["piper:de_DE-thorsten-high","Thorsten HD (groß, eher für Laptop)"],
+  ["piper:de_DE-kerstin-low","Kerstin"],
+  ["piper:de_DE-ramona-low","Ramona"],
+  ["piper:de_DE-eva_k-x_low","Eva"],
+  ["piper:de_DE-karlsson-low","Karlsson"]
 ];
 const PIPER_URLS = [
   "https://esm.sh/@mintplex-labs/piper-tts-web@1.0.4?deps=onnxruntime-web@1.18.0",
@@ -310,7 +310,7 @@ function loadVoices(){
   const sel=$("voice"), keep=sel.value||state.voice;
   sel.innerHTML="";
   if(!IS_CLAUDE){
-    const g=document.createElement("optgroup"); g.label="Eingebaute Stimme (lädt einmalig, dann offline)";
+    const g=document.createElement("optgroup"); g.label="Natürliche Stimmen (laden einmalig, dann offline)";
     const bad=store.get("dk_bad_voices",[]);
     PIPER_VOICES.forEach(([v,l])=>{const o=document.createElement("option");o.value=v;o.textContent=bad.includes(v)?l+" – passt leider nicht":l;o.disabled=bad.includes(v);g.appendChild(o)});
     sel.appendChild(g);
@@ -379,7 +379,17 @@ function predictQueued(m, text, id, prog, ms){
   const run=()=>Promise.race([ predictSafe(m,text,id,prog), new Promise((_,rej)=>setTimeout(()=>rej(new Error("Zeitüberschreitung")), ms||60000)) ]);
   const p=predQueue.then(run,run); predQueue=p.catch(()=>{}); return p;
 }
+let piperActiveVoice=null;
+function piperSwitchVoice(m, id){
+  if(piperActiveVoice===id) return;
+  if(piperActiveVoice!==null){
+    // die Bibliothek merkt sich sonst die zuerst geladene Stimme
+    for(const k of Object.keys(m)){ const v=m[k]; try{ if(v && (typeof v==="function"||typeof v==="object") && "_instance" in v) v._instance=null; }catch(e){} }
+  }
+  piperActiveVoice=id;
+}
 async function predictSafe(m, text, id, prog){
+  piperSwitchVoice(m, id);
   const limits=store.get("dk_ph_limits",{});
   const run=async t=>{ window.__phLimit=limits[id]||null; return await m.predict({text:t, voiceId:id}, prog); };
   try{ return await run(cleanSoft(text)); }
@@ -574,7 +584,7 @@ function speak(text, cb){
         piperLastError="Diese Stimme passt leider nicht zu Dikto und wurde deaktiviert. Bitte wähle eine andere.";
         store.set("dk_piper_err",piperLastError);
         const nm=(PIPER_VOICES.find(x=>x[0]===v)||[,""])[1];
-        setTimeout(()=>{ loadVoices(); $("voiceStatus").textContent="„"+nm.replace("Natürlich: ","")+"“ passt leider nicht zu Dikto und wurde deaktiviert."; },50);
+        setTimeout(()=>{ loadVoices(); $("voiceStatus").textContent="„"+nm+"“ passt leider nicht zu Dikto und wurde deaktiviert."; },50);
       }
       if(my!==playToken) return;
       if(synth){ cb.onStatus&&cb.onStatus("Eingebaute Stimme nicht verfügbar – nutze Gerätestimme. Fehler: "+piperLastError); speakDevice(sents,my,cb,true); }
