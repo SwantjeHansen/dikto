@@ -303,7 +303,8 @@ function loadVoices(){
   sel.innerHTML="";
   if(!IS_CLAUDE){
     const g=document.createElement("optgroup"); g.label="Eingebaute Stimme (lädt einmalig, dann offline)";
-    PIPER_VOICES.forEach(([v,l])=>{const o=document.createElement("option");o.value=v;o.textContent=l;g.appendChild(o)});
+    const bad=store.get("dk_bad_voices",[]);
+    PIPER_VOICES.forEach(([v,l])=>{const o=document.createElement("option");o.value=v;o.textContent=bad.includes(v)?l+" – passt leider nicht":l;o.disabled=bad.includes(v);g.appendChild(o)});
     sel.appendChild(g);
   }
   if(synth){
@@ -317,7 +318,8 @@ function loadVoices(){
   }
   if(!sel.options.length){ const o=document.createElement("option"); o.value=""; o.textContent="Keine Sprachausgabe verfügbar"; sel.appendChild(o); }
   const opts=[...sel.options].map(o=>o.value);
-  if(keep && opts.includes(keep)) sel.value=keep;
+  const okOpts=[...sel.options].filter(o=>!o.disabled).map(o=>o.value);
+  if(keep && okOpts.includes(keep)) sel.value=keep;
   else { const de=devVoices.filter(v=>/^de/i.test(v.lang)); const pref=de.find(v=>/google|anna|petra|markus|helena|katja|conrad/i.test(v.name))||de[0]; sel.value = pref ? "dev:"+pref.voiceURI : opts[0]; }
   voiceStatus();
 }
@@ -356,9 +358,9 @@ async function workingPiper(id, text, prog){
       if(!st.includes(id) && typeof m.download==="function") await m.download(id, prog);
       let first;
       try{ first=await predictSafe(m, text, id, prog); }
-      catch(e){ if(/OrtRun|Gather|out of data bounds/i.test(String(e&&e.message))){ piperMod=m; return {m, first:null}; } throw e; }
+      catch(e){ if(/Gather|out of data bounds/i.test(String(e&&e.message))){ piperMod=m; const x=new Error("INKOMPATIBEL: "+e.message); x.incompatible=true; throw x; } if(/OrtRun/i.test(String(e&&e.message))){ piperMod=m; return {m, first:null}; } throw e; }
       piperMod=m; return {m, first};
-    }catch(e){ errs.push(new URL(u).host+(u.includes("vits")?" (vits)":"")+": "+(e&&e.message||e)); console.warn(u,e); }
+    }catch(e){ if(e&&e.incompatible) throw e; errs.push(new URL(u).host+(u.includes("vits")?" (vits)":"")+": "+(e&&e.message||e)); console.warn(u,e); }
   }
   throw new Error(errs.join(" || "));
 }
@@ -547,6 +549,14 @@ function speak(text, cb){
   if(usingPiper()){
     speakPiper(sents,my,cb).catch(e=>{
       console.warn("Piper:",e); piperFail(e);
+      if(/Gather|out of data bounds/i.test(String(e&&e.message))){
+        const v=$("voice").value, bad=store.get("dk_bad_voices",[]);
+        if(!bad.includes(v)){ bad.push(v); store.set("dk_bad_voices",bad); }
+        piperLastError="Diese Stimme passt leider nicht zu Dikto und wurde deaktiviert. Bitte wähle eine andere.";
+        store.set("dk_piper_err",piperLastError);
+        const nm=(PIPER_VOICES.find(x=>x[0]===v)||[,""])[1];
+        setTimeout(()=>{ loadVoices(); $("voiceStatus").textContent="„"+nm.replace("Natürlich: ","")+"“ passt leider nicht zu Dikto und wurde deaktiviert."; },50);
+      }
       if(my!==playToken) return;
       if(synth){ cb.onStatus&&cb.onStatus("Eingebaute Stimme nicht verfügbar – nutze Gerätestimme. Fehler: "+piperLastError); speakDevice(sents,my,cb,true); }
       else cb.onError&&cb.onError("Die eingebaute Stimme konnte nicht geladen werden.");
