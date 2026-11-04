@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dikto – Hören, behalten, wiedergeben</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='6' y='6' width='88' height='88' rx='24' fill='%23EEEDFE'/%3E%3Cg fill='%23534AB7'%3E%3Crect x='16' y='43' width='6' height='14' rx='3'/%3E%3Crect x='25' y='32' width='6' height='36' rx='3'/%3E%3Crect x='34' y='38' width='6' height='24' rx='3'/%3E%3Crect x='43' y='28' width='6' height='44' rx='3'/%3E%3C/g%3E%3Cg fill='none' stroke='%237F77DD' stroke-width='2.5'%3E%3Crect x='53.25' y='29.25' width='5.5' height='41.5' rx='2.75'/%3E%3Crect x='62.25' y='39.25' width='5.5' height='21.5' rx='2.75'/%3E%3Crect x='71.25' y='33.25' width='5.5' height='33.5' rx='2.75'/%3E%3Crect x='80.25' y='44.25' width='5.5' height='11.5' rx='2.75'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="assets/dikto-icon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <script type="importmap">{"imports":{
   "https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.18.0/": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/",
   "https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.17.1/": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/"
@@ -26,7 +28,7 @@
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 main{max-width:720px;margin:0 auto;padding:18px 16px 60px}
 header{display:flex;align-items:center;gap:12px;margin:2px 0 18px}
-header svg{width:52px;height:52px;flex:none}
+header .brand-logo{width:64px;height:80px;object-fit:contain;flex:none}
 h1{font-family:Fraunces,Georgia,serif;font-weight:650;font-size:1.75rem;margin:0;letter-spacing:-.01em;line-height:1.1}
 .sub{color:var(--muted);margin:2px 0 0;font-size:.92rem}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:14px}
@@ -52,7 +54,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .hidden{display:none!important}
 .listen{text-align:center;padding:26px 10px}
 .pulse{width:86px;height:86px;border-radius:50%;margin:6px auto 16px;background:var(--soft);display:grid;place-items:center;position:relative}
-.pulse svg{width:46px;height:46px}
+.pulse img{width:86px;height:86px;border-radius:22px}
 .pulse::after{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid var(--accent);animation:p 1.6s ease-out infinite}
 .pulse.idle::after{animation:none;opacity:.25}
 @keyframes p{from{transform:scale(1);opacity:.8}to{transform:scale(1.45);opacity:0}}
@@ -92,11 +94,7 @@ th{color:var(--muted);font-weight:600;font-size:.74rem;text-transform:uppercase;
 <body>
 <main>
   <header>
-    <svg viewBox="0 0 100 100" aria-hidden="true">
-      <rect x="6" y="6" width="88" height="88" rx="24" fill="#EEEDFE"/>
-      <g fill="#534AB7"><rect x="16" y="43" width="6" height="14" rx="3"/><rect x="25" y="32" width="6" height="36" rx="3"/><rect x="34" y="38" width="6" height="24" rx="3"/><rect x="43" y="28" width="6" height="44" rx="3"/></g>
-      <g fill="none" stroke="#7F77DD" stroke-width="2.5"><rect x="53.25" y="29.25" width="5.5" height="41.5" rx="2.75"/><rect x="62.25" y="39.25" width="5.5" height="21.5" rx="2.75"/><rect x="71.25" y="33.25" width="5.5" height="33.5" rx="2.75"/><rect x="80.25" y="44.25" width="5.5" height="11.5" rx="2.75"/></g>
-    </svg>
+    <img class="brand-logo" src="assets/dikto-mascot.svg" alt="Dikto Logo">
     <div><h1>Dikto</h1><p class="sub">Hören · behalten · wörtlich wiedergeben</p></div>
   </header>
 
@@ -141,7 +139,7 @@ th{color:var(--muted);font-weight:600;font-size:.74rem;text-transform:uppercase;
 
   <!-- 2 LISTEN -->
   <section id="listen" class="card listen hidden">
-    <div class="pulse" id="pulse"><svg viewBox="0 0 100 100" aria-hidden="true"><g fill="#534AB7"><rect x="16" y="43" width="6" height="14" rx="3"/><rect x="25" y="32" width="6" height="36" rx="3"/><rect x="34" y="38" width="6" height="24" rx="3"/><rect x="43" y="28" width="6" height="44" rx="3"/></g><g fill="none" stroke="#7F77DD" stroke-width="2.5"><rect x="53.25" y="29.25" width="5.5" height="41.5" rx="2.75"/><rect x="62.25" y="39.25" width="5.5" height="21.5" rx="2.75"/><rect x="71.25" y="33.25" width="5.5" height="33.5" rx="2.75"/><rect x="80.25" y="44.25" width="5.5" height="11.5" rx="2.75"/></g></svg></div>
+    <div class="pulse" id="pulse"><img src="assets/dikto-icon.svg" alt=""></div>
     <div class="big" id="clock">0:00</div>
     <div class="bar"><i id="prog"></i></div>
     <p class="hint" id="listenInfo">Konzentrier dich – der Text wird nur einmal abgespielt.</p>

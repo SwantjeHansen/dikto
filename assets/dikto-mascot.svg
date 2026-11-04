@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 600" role="img" aria-label="Dikto Maskottchen">
+  <!-- Schatten -->
+  <ellipse cx="250" cy="572" rx="125" ry="16" fill="#E9DCCD"/>
+
+  <!-- Schall-Striche (kommen an) -->
+  <g stroke-linecap="round" fill="none" stroke-width="13">
+    <path d="M30 228 Q48 214 66 228 Q84 242 102 228" stroke="#86D3C3"/>
+    <path d="M22 300 L96 300" stroke="#FFD978"/>
+    <path d="M38 370 Q54 358 70 370" stroke="#86D3C3"/>
+  </g>
+
+  <!-- Beine -->
+  <g stroke="#2C2119" stroke-width="10" stroke-linejoin="round">
+    <rect x="198" y="440" width="34" height="96" rx="17" fill="#FFC542" transform="rotate(10 215 488)"/>
+    <rect x="272" y="440" width="34" height="100" rx="17" fill="#FFC542"/>
+  </g>
+  <ellipse cx="200" cy="540" rx="40" ry="22" fill="#2C2119"/>
+  <ellipse cx="300" cy="546" rx="40" ry="22" fill="#2C2119"/>
+
+  <!-- Arm links (unten) -->
+  <rect x="62" y="330" width="120" height="40" rx="20" fill="#FFC542" stroke="#2C2119" stroke-width="10" transform="rotate(12 122 350)"/>
+  <!-- Arm rechts (winkt) -->
+  <rect x="352" y="318" width="118" height="40" rx="20" fill="#FFC542" stroke="#2C2119" stroke-width="10" transform="rotate(-38 352 338)"/>
+
+  <!-- Körper: Sprechblase -->
+  <rect x="120" y="160" width="250" height="285" rx="112" fill="#FFC542" stroke="#2C2119" stroke-width="10"/>
+  <!-- Sprechblasen-Zipfel -->
+  <path d="M281 433 L327 410 L362 486 Z" fill="#FFC542"/>
+  <path d="M330 419 L362 486 L286 441" fill="none" stroke="#2C2119" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Kopfhörer-Bügel -->
+  <path d="M132 262 C132 118 358 118 358 262" fill="none" stroke="#2C2119" stroke-width="30" stroke-linecap="round"/>
+  <path d="M132 262 C132 118 358 118 358 262" fill="none" stroke="#147D64" stroke-width="13" stroke-linecap="round"/>
+  <!-- Ohrmuscheln -->
+  <rect x="98" y="232" width="52" height="96" rx="24" fill="#147D64" stroke="#2C2119" stroke-width="10"/>
+  <rect x="340" y="232" width="52" height="96" rx="24" fill="#147D64" stroke="#2C2119" stroke-width="10"/>
+  <rect x="112" y="250" width="12" height="40" rx="6" fill="#86D3C3"/>
+  <rect x="366" y="250" width="12" height="40" rx="6" fill="#86D3C3"/>
+
+  <!-- Gesicht -->
+  <circle cx="212" cy="300" r="21" fill="#2C2119"/>
+  <circle cx="280" cy="300" r="21" fill="#2C2119"/>
+  <circle cx="219" cy="293" r="7" fill="#FFF9F1"/>
+  <circle cx="287" cy="293" r="7" fill="#FFF9F1"/>
+  <circle cx="178" cy="345" r="18" fill="#FF9C7E" opacity=".75"/>
+  <circle cx="316" cy="345" r="18" fill="#FF9C7E" opacity=".75"/>
+  <path d="M206 352 Q246 392 288 352" fill="none" stroke="#2C2119" stroke-width="10" stroke-linecap="round"/>
+</svg>
